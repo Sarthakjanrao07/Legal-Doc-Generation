@@ -537,6 +537,280 @@ function validateAnswers(
 // DRAFTING ENGINE (LLM with strict constraints)
 // ============================================================================
 
+// class DraftingEngine {
+//   private history: Map<string, Array<{role: string, content: string}>> = new Map()
+
+//   // Guardrails: Check for prompt injection attempts
+//   private detectPromptInjection(input: string): boolean {
+//     const injectionPatterns = [
+//       'ignore previous', 'ignore instructions', 'disregard', 'system prompt',
+//       'you are now', 'act as', 'pretend', 'jailbreak', 'override',
+//       'forget everything', 'new instructions', 'your new role'
+//     ]
+//     const lowerInput = input.toLowerCase()
+//     return injectionPatterns.some(p => lowerInput.includes(p))
+//   }
+
+//   // Guardrails: Check for legal advice requests
+//   private detectLegalAdviceRequest(input: string): boolean {
+//     const advicePatterns = [
+//       'should i', 'what should', 'do you recommend', 'is it legal',
+//       'can i legally', 'what is the law', 'legal requirement',
+//       'advise me', 'give me advice', 'best option'
+//     ]
+//     const lowerInput = input.toLowerCase()
+//     return advicePatterns.some(p => lowerInput.includes(p))
+//   }
+
+//   // Guardrails: Check for vague inputs
+//   private detectVagueInput(input: string, questionType: string): { isVague: boolean; clarification?: string } {
+//     const lowerInput = input.toLowerCase().trim()
+    
+//     // Allow common skip/negative responses - these are valid, not vague
+//     const validShortResponses = ['no', 'yes', 'none', 'n/a', 'na', 'skip', 'nope', 'ok', 'okay']
+//     if (validShortResponses.includes(lowerInput)) {
+//       return { isVague: false }
+//     }
+    
+//     // Check for single-word or very short responses (only for text questions that need details)
+//     if (questionType === 'text' && lowerInput.length < 3) {
+//       return { isVague: true, clarification: 'Your response seems too brief. Could you please provide more details?' }
+//     }
+    
+//     // Check for "I don't know" or uncertain responses
+//     const uncertaintyPhrases = ['i dont know', 'i don\'t know', 'not sure', 'maybe', 'i guess', 'idk', 'unclear']
+//     if (uncertaintyPhrases.some(p => lowerInput.includes(p))) {
+//       return { isVague: true, clarification: 'I understand you\'re uncertain. Could you provide your best answer, or would you like me to explain what this information is used for?' }
+//     }
+    
+//     return { isVague: false }
+//   }
+
+//   // Helper: Capitalize names properly
+//   private capitalizeName(name: string): string {
+//     return name.trim().split(/\s+/).map(word => 
+//       word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+//     ).join(' ')
+//   }
+
+//   // Extract structured data from user input
+//   async extractValue(
+//     sessionId: string,
+//     userMessage: string,
+//     question: Question,
+//     previousAnswers?: Record<string, unknown>
+//   ): Promise<{ value: unknown; needsClarification: boolean; clarification?: string; guardrailTriggered?: string }> {
+    
+//     // GUARDRAIL 1: Check for prompt injection
+//     if (this.detectPromptInjection(userMessage)) {
+//       return { 
+//         value: null, 
+//         needsClarification: true, 
+//         clarification: 'I cannot process that request. Please provide a direct answer to the question.',
+//         guardrailTriggered: 'prompt_injection'
+//       }
+//     }
+
+//     // GUARDRAIL 2: Check for legal advice requests
+//     if (this.detectLegalAdviceRequest(userMessage)) {
+//       return { 
+//         value: null, 
+//         needsClarification: true, 
+//         clarification: 'I cannot provide legal advice. I can only help you create documents based on your decisions. Please consult a qualified attorney for legal guidance.',
+//         guardrailTriggered: 'legal_advice'
+//       }
+//     }
+
+//     // GUARDRAIL 3: Check for vague inputs
+//     const vaguenessCheck = this.detectVagueInput(userMessage, question.type)
+//     if (vaguenessCheck.isVague) {
+//       return { 
+//         value: null, 
+//         needsClarification: true, 
+//         clarification: vaguenessCheck.clarification!
+//       }
+//     }
+
+//     // GUARDRAIL 4: Check for contradictions with previous answers
+//     if (previousAnswers && question.id === 'spouse_name') {
+//       const maritalStatus = previousAnswers['marital_status']
+//       const lowerInput = userMessage.toLowerCase()
+//       const noSpousePhrases = ['no spouse', 'dont have spouse', 'don\'t have spouse', 'no husband', 'no wife', 'none', 'n/a', 'na']
+      
+//       if (maritalStatus === 'Married' && noSpousePhrases.some(p => lowerInput.includes(p))) {
+//         return {
+//           value: null,
+//           needsClarification: true,
+//           clarification: 'CONTRADICTION DETECTED: You indicated you are "Married" but now say you don\'t have a spouse. Please clarify: Are you currently legally married? If yes, please provide your spouse\'s name. If no, please tell me and I\'ll update your marital status.',
+//           guardrailTriggered: 'contradiction'
+//         }
+//       }
+//     }
+
+//     // For text fields that are names, auto-capitalize
+//     if (question.type === 'text' && (question.id.includes('name') || question.id === 'full_name')) {
+//       return { value: this.capitalizeName(userMessage), needsClarification: false }
+//     }
+    
+//     // For boolean, convert common responses
+//     if (question.type === 'boolean') {
+//       const lowerInput = userMessage.toLowerCase()
+//       if (['yes', 'y', 'yeah', 'yep', 'true', 'correct', 'affirmative'].includes(lowerInput)) {
+//         return { value: true, needsClarification: false }
+//       }
+//       if (['no', 'n', 'nope', 'false', 'incorrect', 'negative', 'skip'].includes(lowerInput)) {
+//         return { value: false, needsClarification: false }
+//       }
+//     }
+    
+//     // For select, match against options
+//     if (question.type === 'select' && question.options) {
+//       const match = question.options.find(o => 
+//         o.toLowerCase() === userMessage.toLowerCase() ||
+//         o.toLowerCase().includes(userMessage.toLowerCase())
+//       )
+//       if (match) return { value: match, needsClarification: false }
+//     }
+    
+//     // For date fields, validate format
+//     if (question.type === 'date') {
+//       const dateMatch = userMessage.match(/\d{4}-\d{2}-\d{2}/)
+//       if (dateMatch) {
+//         return { value: dateMatch[0], needsClarification: false }
+//       }
+//       // Try to extract date from text
+//       return { value: userMessage, needsClarification: false }
+//     }
+    
+//     // For complex text fields, use LLM for extraction
+//     const prompt = `You are a data extraction system for legal documents. Extract ONLY the requested information.
+
+// Question: "${question.question}"
+// Type: ${question.type}
+// ${question.options ? `Valid options: ${question.options.join(', ')}` : ''}
+
+// User's response: "${userMessage}"
+
+// RULES:
+// 1. Extract ONLY the relevant data, no extra words
+// 2. For names: Return properly capitalized name (e.g., "John Smith")
+// 3. For dates: Return in YYYY-MM-DD format
+// 4. For boolean: Return true or false only
+// 5. For select: Return exactly one of the valid options
+// 6. If vague/unclear, return null and provide clarification question
+// 7. Never add information not provided by user
+
+// Return JSON: {"value": <extracted or null>, "needsClarification": <bool>, "clarification": "<question if needed>"}`
+
+//     try {
+//       const res = await this.callLLM(sessionId, prompt)
+//       const match = res.match(/\{[\s\S]*\}/)
+//       if (match) {
+//         const parsed = JSON.parse(match[0])
+//         return parsed
+//       }
+//     } catch (e) {
+//       console.error('LLM extraction error:', e)
+//     }
+    
+//     // Fallback - return the value directly
+//     return { value: userMessage, needsClarification: false }
+//   }
+
+//   // Generate professional legal clause using LLM
+//   async draftClause(
+//     sessionId: string,
+//     field: string,
+//     rawValue: unknown,
+//     allAnswers: Record<string, unknown>,
+//     config: DocumentConfig
+//   ): Promise<string> {
+//     // First, use the built-in clause generator
+//     const baseClause = config.clauseGenerator(field, rawValue, allAnswers)
+    
+//     // If we have a good clause from generator, use it
+//     if (baseClause && baseClause.length > 20) {
+//       return baseClause
+//     }
+    
+//     // Otherwise, ask LLM to draft (with strict constraints)
+//     const prompt = `Draft a professional legal clause for a ${config.name}.
+
+// Field: ${field}
+// Raw value: ${rawValue}
+// Context: ${JSON.stringify(allAnswers)}
+
+// RULES:
+// 1. Use formal legal language
+// 2. Be concise (1-2 sentences max)
+// 3. Do NOT add any information not provided
+// 4. Do NOT give legal advice
+// 5. Return ONLY the clause text, nothing else
+// 6. Do not use placeholders like [Address] or [Name]`
+
+//     try {
+//       const res = await this.callLLM(sessionId, prompt)
+//       return res.replace(/^["']|["']$/g, '').trim()
+//     } catch {
+//       return baseClause || ''
+//     }
+//   }
+
+//   // Call LLM API (Groq backend)
+//   private async callLLM(sessionId: string, prompt: string): Promise<string> {
+//     if (!this.history.has(sessionId)) {
+//       this.history.set(sessionId, [])
+//     }
+//     const h = this.history.get(sessionId)!
+    
+//     // Build messages array with system prompt and history
+//     const messages = [
+//       { role: 'system', content: 'You are a legal document drafting assistant for creating wills and power of attorney documents. Follow instructions exactly. Return only valid JSON when requested. Never add information not provided by the user. Never use placeholders like [Address] or [Name]. Be concise and professional.' },
+//       ...h.slice(-6), // Keep last 6 messages for context
+//       { role: 'user', content: prompt }
+//     ]
+    
+//     for (let attempt = 0; attempt < 3; attempt++) {
+//       try {
+//         const res = await fetch(LLM_API_URL, {
+//           method: 'POST',
+//           headers: { 'Content-Type': 'application/json' },
+//           body: JSON.stringify({ messages })
+//         })
+        
+//         const data = await res.json()
+        
+//         if (data.success && data.response) {
+//           const response = data.response.trim()
+//           h.push({ role: 'user', content: prompt })
+//           h.push({ role: 'assistant', content: response })
+//           return response
+//         }
+        
+//         // If error, wait and retry
+//         if (!data.success && attempt < 2) {
+//           await new Promise(r => setTimeout(r, 2000))
+//           continue
+//         }
+        
+//         throw new Error(data.error || 'LLM API error')
+//       } catch (e) {
+//         console.error('LLM call error:', e)
+//         if (attempt === 2) throw e
+//         await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
+//       }
+//     }
+//     return ''
+//   }
+
+//   clear(sessionId: string) {
+//     this.history.delete(sessionId)
+//   }
+// }
+// ============================================================================
+// DRAFTING ENGINE (100% LLM-Based - No Pattern Matching)
+// ============================================================================
+
 class DraftingEngine {
   private history: Map<string, Array<{role: string, content: string}>> = new Map()
 
@@ -562,38 +836,7 @@ class DraftingEngine {
     return advicePatterns.some(p => lowerInput.includes(p))
   }
 
-  // Guardrails: Check for vague inputs
-  private detectVagueInput(input: string, questionType: string): { isVague: boolean; clarification?: string } {
-    const lowerInput = input.toLowerCase().trim()
-    
-    // Allow common skip/negative responses - these are valid, not vague
-    const validShortResponses = ['no', 'yes', 'none', 'n/a', 'na', 'skip', 'nope', 'ok', 'okay']
-    if (validShortResponses.includes(lowerInput)) {
-      return { isVague: false }
-    }
-    
-    // Check for single-word or very short responses (only for text questions that need details)
-    if (questionType === 'text' && lowerInput.length < 3) {
-      return { isVague: true, clarification: 'Your response seems too brief. Could you please provide more details?' }
-    }
-    
-    // Check for "I don't know" or uncertain responses
-    const uncertaintyPhrases = ['i dont know', 'i don\'t know', 'not sure', 'maybe', 'i guess', 'idk', 'unclear']
-    if (uncertaintyPhrases.some(p => lowerInput.includes(p))) {
-      return { isVague: true, clarification: 'I understand you\'re uncertain. Could you provide your best answer, or would you like me to explain what this information is used for?' }
-    }
-    
-    return { isVague: false }
-  }
-
-  // Helper: Capitalize names properly
-  private capitalizeName(name: string): string {
-    return name.trim().split(/\s+/).map(word => 
-      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-    ).join(' ')
-  }
-
-  // Extract structured data from user input
+  // Extract structured data from user input using LLM
   async extractValue(
     sessionId: string,
     userMessage: string,
@@ -621,17 +864,7 @@ class DraftingEngine {
       }
     }
 
-    // GUARDRAIL 3: Check for vague inputs
-    const vaguenessCheck = this.detectVagueInput(userMessage, question.type)
-    if (vaguenessCheck.isVague) {
-      return { 
-        value: null, 
-        needsClarification: true, 
-        clarification: vaguenessCheck.clarification!
-      }
-    }
-
-    // GUARDRAIL 4: Check for contradictions with previous answers
+    // GUARDRAIL 3: Check for contradictions with previous answers
     if (previousAnswers && question.id === 'spouse_name') {
       const maritalStatus = previousAnswers['marital_status']
       const lowerInput = userMessage.toLowerCase()
@@ -647,60 +880,27 @@ class DraftingEngine {
       }
     }
 
-    // For text fields that are names, auto-capitalize
-    if (question.type === 'text' && (question.id.includes('name') || question.id === 'full_name')) {
-      return { value: this.capitalizeName(userMessage), needsClarification: false }
-    }
-    
-    // For boolean, convert common responses
-    if (question.type === 'boolean') {
-      const lowerInput = userMessage.toLowerCase()
-      if (['yes', 'y', 'yeah', 'yep', 'true', 'correct', 'affirmative'].includes(lowerInput)) {
-        return { value: true, needsClarification: false }
-      }
-      if (['no', 'n', 'nope', 'false', 'incorrect', 'negative', 'skip'].includes(lowerInput)) {
-        return { value: false, needsClarification: false }
-      }
-    }
-    
-    // For select, match against options
-    if (question.type === 'select' && question.options) {
-      const match = question.options.find(o => 
-        o.toLowerCase() === userMessage.toLowerCase() ||
-        o.toLowerCase().includes(userMessage.toLowerCase())
-      )
-      if (match) return { value: match, needsClarification: false }
-    }
-    
-    // For date fields, validate format
-    if (question.type === 'date') {
-      const dateMatch = userMessage.match(/\d{4}-\d{2}-\d{2}/)
-      if (dateMatch) {
-        return { value: dateMatch[0], needsClarification: false }
-      }
-      // Try to extract date from text
-      return { value: userMessage, needsClarification: false }
-    }
-    
-    // For complex text fields, use LLM for extraction
-    const prompt = `You are a data extraction system for legal documents. Extract ONLY the requested information.
+    // ========== USE LLM FOR ALL EXTRACTION ==========
+    const prompt = `You are a data extraction system for legal documents. Extract and format the user's response.
 
-Question: "${question.question}"
-Type: ${question.type}
-${question.options ? `Valid options: ${question.options.join(', ')}` : ''}
+QUESTION: "${question.question}"
+QUESTION TYPE: ${question.type}
+ ${question.options ? `VALID OPTIONS: ${question.options.join(', ')}` : ''}
 
-User's response: "${userMessage}"
+USER'S RESPONSE: "${userMessage}"
 
-RULES:
-1. Extract ONLY the relevant data, no extra words
-2. For names: Return properly capitalized name (e.g., "John Smith")
-3. For dates: Return in YYYY-MM-DD format
-4. For boolean: Return true or false only
-5. For select: Return exactly one of the valid options
-6. If vague/unclear, return null and provide clarification question
-7. Never add information not provided by user
+EXTRACTION RULES:
+1. For TEXT fields (especially names): Return properly capitalized (e.g., "john smith" → "John Smith")
+2. For BOOLEAN fields: Return true or false (interpret yes/yeah/yep/true/correct as true; no/nope/false/incorrect/skip as false)
+3. For SELECT fields: Return EXACTLY one of the valid options that best matches
+4. For DATE fields: Return in YYYY-MM-DD format if possible, otherwise return as-is
+5. For ADDRESS fields: Return properly formatted with correct capitalization
+6. If the response is vague, unclear, or doesn't answer the question, return null and provide a clarification question
+7. NEVER add information not provided by the user
+8. NEVER use placeholders like [Name] or [Address]
 
-Return JSON: {"value": <extracted or null>, "needsClarification": <bool>, "clarification": "<question if needed>"}`
+Return ONLY valid JSON in this exact format:
+{"value": <extracted value or null>, "needsClarification": <true or false>, "clarification": "<question if needed, otherwise omit>"}`
 
     try {
       const res = await this.callLLM(sessionId, prompt)
@@ -725,34 +925,48 @@ Return JSON: {"value": <extracted or null>, "needsClarification": <bool>, "clari
     allAnswers: Record<string, unknown>,
     config: DocumentConfig
   ): Promise<string> {
-    // First, use the built-in clause generator
-    const baseClause = config.clauseGenerator(field, rawValue, allAnswers)
     
-    // If we have a good clause from generator, use it
-    if (baseClause && baseClause.length > 20) {
-      return baseClause
-    }
-    
-    // Otherwise, ask LLM to draft (with strict constraints)
-    const prompt = `Draft a professional legal clause for a ${config.name}.
+    // ========== USE LLM FOR ALL CLAUSE DRAFTING ==========
+    const prompt = `You are a legal document drafting assistant. Draft a professional legal clause.
 
-Field: ${field}
-Raw value: ${rawValue}
-Context: ${JSON.stringify(allAnswers)}
+DOCUMENT TYPE: ${config.name}
+FIELD: ${field}
+RAW VALUE: ${rawValue}
+ALL COLLECTED DATA: ${JSON.stringify(allAnswers, null, 2)}
 
-RULES:
-1. Use formal legal language
-2. Be concise (1-2 sentences max)
-3. Do NOT add any information not provided
-4. Do NOT give legal advice
-5. Return ONLY the clause text, nothing else
-6. Do not use placeholders like [Address] or [Name]`
+DRAFTING RULES:
+1. Write in formal legal language appropriate for a ${config.name}
+2. Be concise (1-3 sentences maximum)
+3. Use ONLY the information provided - NEVER add information not given by the user
+4. NEVER use placeholders like [Name], [Address], [Date], or [Value]
+5. Properly capitalize all names and addresses
+6. If the field is about relationships (executor, agent, guardian), mention the relationship in the clause
+7. If the raw value is empty, null, or indicates "skip/none/n/a", return an empty string
+8. For negation responses (like "no wishes", "none", "skip"), return an empty string to omit the clause
+9. Return ONLY the clause text - no explanations, no labels, no extra formatting
+
+EXAMPLE OUTPUTS:
+- For executor_name with "John Smith" and relationship "Spouse": "I appoint John Smith, my spouse, as Executor of this Will."
+- For agent_name with "Jane Doe" and address "123 Main St": "I hereby appoint Jane Doe, residing at 123 Main St, as my Attorney-in-Fact (Agent)."
+- For funeral_wishes with "No": "" (empty, omit section)
+- For has_children with false: "" (empty, omit section)
+
+Draft the clause now. Return ONLY the clause text or empty string:`
 
     try {
       const res = await this.callLLM(sessionId, prompt)
-      return res.replace(/^["']|["']$/g, '').trim()
-    } catch {
-      return baseClause || ''
+      const clause = res.replace(/^["']|["']$/g, '').trim()
+      
+      // Check if LLM returned a skip/negation response
+      const skipPhrases = ['skip', 'none', 'n/a', 'na', 'not applicable', 'no clause', 'omit']
+      if (skipPhrases.some(p => clause.toLowerCase().includes(p)) || clause.length < 10) {
+        return ''
+      }
+      
+      return clause
+    } catch (e) {
+      console.error('LLM clause drafting error:', e)
+      return ''
     }
   }
 
@@ -765,7 +979,7 @@ RULES:
     
     // Build messages array with system prompt and history
     const messages = [
-      { role: 'system', content: 'You are a legal document drafting assistant for creating wills and power of attorney documents. Follow instructions exactly. Return only valid JSON when requested. Never add information not provided by the user. Never use placeholders like [Address] or [Name]. Be concise and professional.' },
+      { role: 'system', content: 'You are a professional legal document drafting assistant. You MUST follow all instructions exactly. You MUST return valid JSON when requested. You MUST NEVER use placeholders like [Name] or [Address]. You MUST NEVER add information not provided by the user. You MUST be concise and professional.' },
       ...h.slice(-6), // Keep last 6 messages for context
       { role: 'user', content: prompt }
     ]
@@ -807,7 +1021,6 @@ RULES:
     this.history.delete(sessionId)
   }
 }
-
 const draftingEngine = new DraftingEngine()
 
 // ============================================================================
